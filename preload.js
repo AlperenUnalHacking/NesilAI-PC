@@ -1,5 +1,6 @@
-// NesilAI Masaüstü — OpenView köprüsü (sandbox uyumlu, yalnızca güvenli IPC)
-// Renderer'a window.nesilaiDesktop API'sini açar; başka hiçbir Node yeteneği verilmez.
+// NesilAI Masaüstü — OpenView + NesilCode köprüsü (sandbox uyumlu, yalnızca güvenli IPC)
+// Renderer'a window.nesilaiDesktop ve window.nesilaiCode API'lerini açar;
+// başka hiçbir Node yeteneği verilmez.
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('nesilaiDesktop', {
@@ -28,4 +29,19 @@ contextBridge.exposeInMainWorld('nesilaiDesktop', {
 
     // OpenView: getDisplayMedia isteklerinde kullanılacak monitörü seç
     setPreferredMonitor: (displayId) => ipcRenderer.invoke('openview:set-preferred-monitor', displayId)
+});
+
+// NesilCode — kodlama ajanı için dosya sistemi köprüsü.
+// Erişim yalnızca kullanıcının iletişim kutusundan seçtiği proje klasörüne
+// sınırlıdır (sınır ana süreçte uygulanır); burada yalnızca ince bir sarıcı var.
+contextBridge.exposeInMainWorld('nesilaiCode', {
+    fsAvailable: true,
+    fsPickDir: () => ipcRenderer.invoke('nesilcode:pick-dir'),
+    fsInit: () => ipcRenderer.invoke('nesilcode:reconnect'),
+    rootInfo: () => ipcRenderer.invoke('nesilcode:root-info'),
+    fsReadDir: (rel) => ipcRenderer.invoke('nesilcode:read-dir', rel),
+    fsReadFile: (rel) => ipcRenderer.invoke('nesilcode:read-file', rel),
+    fsWriteFile: (rel, content) => ipcRenderer.invoke('nesilcode:write-file', rel, content),
+    fsMkdir: (rel) => ipcRenderer.invoke('nesilcode:mkdir', rel),
+    fsRemove: (rel) => ipcRenderer.invoke('nesilcode:remove', rel)
 });

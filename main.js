@@ -1,6 +1,8 @@
 // NesilAI Masaüstü — Electron ana süreç
 // website/ klasöründen derlenen app/ içeriğini uygulama penceresinde gösterir.
-const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, desktopCapturer, screen, session } = require('electron');
+const { app, BrowserWindow, shell, Menu, Tray, nativeImage, ipcMain, desktopCapturer, screen, session, dialog } = require('electron');
+const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 
 let mainWindow = null;
@@ -301,3 +303,102 @@ function setupOpenViewDisplayHandler() {
         console.warn('OpenView display handler kurulamadı:', e);
     }
 }
+// ========================================================
+// NesilCode — kodlama ajanı için güvenli dosya sistemi köprüsü
+// Renderer sandbox'ta çalışır; disk erişimi yalnızca bu IPC
+// işleyicileri üzerinden, kullanıcı tarafından seçilen proje
+// klasörüne sınırlıdır.
+// ========================================================
+let ncRoot = null;          // yetkili proje kökü (mutlak yol)
+let ncRootLabel = 'Proje klasörü (disk)';
+
+function ncResolve(rel) {
+    // Kök dışına çıkışı engelle; mutlak/garip yollar köke bağlanır. Boş = kök.
+    const clean = String(rel == null ? '' : rel).replace(/\\/g, '/');
+    const resolved = path.resolve(ncRoot, clean.replace(/^\/+/, ''));
+    const normRoot = path.resolve(ncRoot);
+    if (resolved !== normRoot && !resolved.startsWith(normRoot + path.sep)) {
+        throw new Error('Kök dışındaki yola erişim engellendi: ' + rel);
+    }
+    return resolved;
+}
+
+async function ncReadDir(rel) {
+    if (!ncRoot) throw new Error('Önce bir proje klasörü seç.');
+    const dir = ncResolve(rel);
+    let entries;
+    try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch (e) {
+        if (e.code === 'ENOENT') throw new Error('Klasör bulunamadı: ' + (rel || '.'));
+        throw e;
+    }
+    const out = [];
+    for (const ent of entries) {
+        if (ent.name.startsWith('.')) continue;    // gizli dosyaları listeleme
+        if (ent.name === 'node_modules') continue; // ajanı kilitleyen dev klasör
+        const abs = path.join(dir, ent.name);
+        if (ent.isDirectory()) {
+            out.push({ name: ent.name, type: 'dir' });
+        } else if (ent.isFile()) {
+            let size = 0;
+            try { size = (await fsp.stat(abs)).size; } catch (e) { /* silinmiş olabilir */ }
+            out.push({ name: ent.name, type: 'file', size: size });
+        }
+    }
+    out.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : (a.type === 'dir' ? -1 : 1)));
+    return out;
+}
+
+async function ncReadFile(rel) {
+    if (!ncRoot) throw new Error('Önce bir proje klasörü seç.');
+    const file = ncResolve(rel);
+    const stat = await fsp.stat(file);
+    if (stat.size > 2 * 1024 * 1024) throw new Error('Dosya çok büyük (>2 MB): ' + rel);
+    const buf = await fsp.readFile(file);
+    if (buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) return buf.slice(3).toString('utf8');
+    if (buf.includes(0)) throw new Error('İkili dosya okunamaz: ' + rel);
+    return buf.toString('utf8');
+}
+
+async function ncWriteFile(rel, content) {
+    if (!ncRoot) throw new Error('Önce bir proje klasörü seç.');
+    const file = ncResolve(rel);
+    await fsp.mkdir(path.dirname(file), { recursive: true });   // ara klasörleri de oluştur
+    await fsp.writeFile(file, String(content), 'utf8');
+    return true;
+}
+
+async function ncMkdir(rel) {
+    if (!ncRoot) throw new Error('Önce bir proje klasörü seç.');
+    await fsp.mkdir(ncResolve(rel), { recursive: true });
+    return true;
+}
+
+async function ncRemove(rel) {
+    if (!ncRoot) throw new Error('Önce bir proje klasörü seç.');
+    const target = ncResolve(rel);
+    if (target === path.resolve(ncRoot)) throw new Error('Proje kökü silinemez.');
+    await fsp.rm(target, { recursive: true, force: true });
+    return true;
+}
+
+ipcMain.handle('nesilcode:pick-dir', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showOpenDialog(win, {
+        title: 'NesilCode — proje klasörü seç',
+        properties: ['openDirectory', 'createDirectory']
+    });
+    if (result.canceled || !result.filePaths.length) return false;
+    ncRoot = result.filePaths[0];
+    ncRootLabel = ncRoot;
+    return true;
+});
+
+ipcMain.handle('nesilcode:reconnect', () => !!ncRoot);
+ipcMain.handle('nesilcode:root-info', () => ({ label: ncRootLabel, connected: !!ncRoot }));
+ipcMain.handle('nesilcode:read-dir', (_e, rel) => ncReadDir(rel));
+ipcMain.handle('nesilcode:read-file', (_e, rel) => ncReadFile(rel));
+ipcMain.handle('nesilcode:write-file', (_e, rel, content) => ncWriteFile(rel, content));
+ipcMain.handle('nesilcode:mkdir', (_e, rel) => ncMkdir(rel));
+ipcMain.handle('nesilcode:remove', (_e, rel) => ncRemove(rel));

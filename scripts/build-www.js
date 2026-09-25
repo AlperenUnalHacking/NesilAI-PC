@@ -1,11 +1,11 @@
-// app/ derleme betiği: Electron'un göstereceği site dosyalarını website/'dan kopyalar.
+// app/ derleme betiği: Electron'un göstereceği site dosyalarını depo kökünden kopyalar.
 // Kullanım: "PC & Desktop" klasöründen  ->  npm run build-www   (veya npm start)
 const fs = require('fs');
 const path = require('path');
 
 const desktopRoot = path.resolve(__dirname, '..');          // PC & Desktop/
 const projectRoot = path.resolve(desktopRoot, '..');        // depo kökü
-const site = path.join(projectRoot, 'website');             // website/
+const site = projectRoot;                                    // site dosyaları kökte
 const appDir = path.join(desktopRoot, 'app');
 
 fs.rmSync(appDir, { recursive: true, force: true });

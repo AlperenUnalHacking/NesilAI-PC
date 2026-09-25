@@ -1,7 +1,7 @@
 {
-  "name": "nesilai-pc",
+  "name": "nesilai-desktop",
   "version": "1.1.0",
-  "description": "NesilAI - Bloodline üzerindeki yapay zeka asistanı (Windows masaüstü sürümü)",
+  "description": "NesilAI - Bloodline üzerindeki yapay zeka asistanı (Masaüstü sürümü)",
   "private": true,
   "main": "main.js",
   "author": "Bloodline INC · Acsida",
@@ -41,7 +41,7 @@
       ]
     },
     "nsis": {
-      "artifactName": "NesilAI-Setup-${version}.exe",
+      "artifactName": "NesilAI-Setup.exe",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
@@ -51,5 +51,8 @@
     "portable": {
       "artifactName": "NesilAI-Portable.exe"
     }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
   }
 }
